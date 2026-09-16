@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Two suns</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,500;1,600&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#E6ECF4; --chart:#F3F6FA; --ink:#1B2A4A; --muted:#5A6B8C; --rule:rgba(27,42,74,.14); --focus:#1E7FA8;
+  --safe:rgba(46,150,90,.13); --safe-line:#2E965A; --danger:rgba(200,70,70,.10); --danger-line:#C04646;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0C1428; --chart:#0F1930; --ink:#D8E0EE; --muted:#8A9ABA; --rule:rgba(216,224,238,.11); --focus:#6EC5E9;
+    --safe:rgba(110,210,140,.10); --safe-line:#6ED28C; --danger:rgba(240,110,110,.09); --danger-line:#F07070;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0C1428; --chart:#0F1930; --ink:#D8E0EE; --muted:#8A9ABA; --rule:rgba(216,224,238,.11); --focus:#6EC5E9;
+  --safe:rgba(110,210,140,.10); --safe-line:#6ED28C; --danger:rgba(240,110,110,.09); --danger-line:#F07070;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:1320px;margin:0 auto;padding:20px 20px 32px}
+header{display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;margin-bottom:14px}
+h1{font:italic 600 clamp(34px,5vw,52px)/1 "Cormorant Garamond",Georgia,serif;margin:0;letter-spacing:-.01em}
+header p{margin:0;color:var(--muted);max-width:64ch}
+.layout{display:grid;grid-template-columns:1fr 310px;gap:18px}
+@media (max-width:880px){.layout{grid-template-columns:1fr}}
+.stage{position:relative;background:var(--chart);border:1px solid var(--rule);border-radius:14px;overflow:hidden;height:min(80vh,800px);min-height:420px;touch-action:none}
+canvas{display:block;width:100%;height:100%;cursor:crosshair}
+canvas.panning{cursor:grabbing}
+.status{position:absolute;left:16px;top:10px;pointer-events:none}
+.status .big{font:italic 600 28px/1.1 "Cormorant Garamond",Georgia,serif;font-variant-numeric:tabular-nums}
+.status .small{color:var(--muted);font-size:13px}
+.hint{position:absolute;right:14px;top:12px;color:var(--muted);font-size:13px;pointer-events:none;text-align:right}
+aside{display:flex;flex-direction:column;gap:20px}
+section h2{font:italic 600 22px/1.1 "Cormorant Garamond",Georgia,serif;margin:0 0 8px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+button{font:inherit;font-size:14px;color:var(--ink);background:transparent;border:1px solid var(--rule);border-radius:8px;padding:6px 11px;cursor:pointer}
+button:hover{border-color:var(--muted)}
+button.on{background:var(--ink);color:var(--chart);border-color:var(--ink)}
+button.primary{background:var(--ink);color:var(--chart);border-color:var(--ink);min-width:80px}
+button:disabled{opacity:.5;cursor:default}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+label.slider{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 10px;font-size:14px}
+label.slider input{grid-column:1/-1;width:100%;accent-color:var(--ink)}
+output{color:var(--muted);font-variant-numeric:tabular-nums}
+.stack{display:flex;flex-direction:column;gap:10px}
+.check{display:flex;align-items:center;gap:8px;font-size:14px}
+.note{color:var(--muted);font-size:13px;margin:0}
+.zones{font-size:14px;margin:0}
+.zones b{font-weight:500}
+.key{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+progress{width:100%;accent-color:var(--ink);height:8px}
+ol.log{margin:0;padding-left:0;list-style:none;font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:3px}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Two suns</h1>
+    <p>Planets in a binary star system. Close to either star or far outside the pair, orbits can last billions of years. In between, the two suns take turns tugging on a planet until it is flung away or falls in.</p>
+  </header>
+  <div class="layout">
+    <div class="stage" id="stage">
+      <canvas id="cv" aria-label="Binary star system simulation"></canvas>
+      <div class="status"><div class="big" id="orbits"></div><div class="small" id="survivors"></div></div>
+      <div class="hint">Tap to add a planet on a circular orbit<br>Drag to pan · scroll or pinch to zoom</div>
+    </div>
+    <aside>
+      <section>
+        <h2>Run</h2>
+        <div class="row">
+          <button class="primary" id="play">Pause</button>
+          <button id="restart">Restart</button>
+          <button id="clear">Remove planets</button>
+        </div>
+      </section>
+      <section>
+        <h2>Scenarios</h2>
+        <div class="row" id="scenarios">
+          <button data-s="sampler" class="on">One planet per zone</button>
+          <button data-s="kepler16">Kepler-16</button>
+          <button data-s="kepler34">Kepler-34</button>
+          <button data-s="ring">Ring of planets</button>
+        </div>
+      </section>
+      <section class="stack">
+        <h2>Stars</h2>
+        <label class="slider">Star B's share of the mass<output id="muo"></output><input type="range" id="mu" min="0.1" max="0.5" step="0.01"></label>
+        <label class="slider">Orbit eccentricity<output id="eo"></output><input type="range" id="ecc" min="0" max="0.7" step="0.01"></label>
+        <p class="zones" id="zoneText"></p>
+        <p class="note">Distances are in units of the stars' average separation. Changing the stars restarts every planet from its original orbit.</p>
+      </section>
+      <section class="stack">
+        <h2>Display</h2>
+        <label class="slider">Speed<output id="spo"></output><input type="range" id="speed" min="0.1" max="5" step="0.1" value="0.6"></label>
+        <label class="slider">Trail length<output id="tro"></output><input type="range" id="trail" min="0" max="20" step="1" value="6"></label>
+        <span class="check"><input type="checkbox" id="showZones" checked><label for="showZones">Show predicted zones</label></span>
+        <span class="check"><input type="checkbox" id="showScan" checked><label for="showScan">Show scan results</label></span>
+      </section>
+      <section class="stack">
+        <h2>Stability scan</h2>
+        <p class="note">Launches about 400 test planets at different distances and phases, runs each for 100 orbits of the stars, and marks which survive with their orbit intact.</p>
+        <button id="scanBtn">Run stability scan</button>
+        <progress id="scanProg" value="0" max="1" hidden></progress>
+        <p class="zones" id="scanText"></p>
+      </section>
+      <section class="stack">
+        <h2>What happened</h2>
+        <ol class="log" id="log"><li>Nothing lost yet.</li></ol>
+      </section>
+    </aside>
+  </div>
+</div>
+<script>
+(() => {
+// Units: binary semi-major axis = 1, total star mass = 1, binary period = 1.
+const G = 4*Math.PI*Math.PI, N = 2000, H = 1/N, RCOL = 0.02, ESC = 40;
+const PALETTE = ['#2F9BD1','#4FAE5B','#8A6BE0','#D65A95','#2E9E8F','#C98A10','#5E7CE2','#B5563A'];
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d'), stage = $('stage');
+
+let mu = 0.35, ecc = 0.2;
+let TAx, TAy, TAvx, TAvy, TBx, TBy, TBvx, TBvy;
+let tick = 0, running = true, planets = [], specs = [], scan = null, scanResult = null, log = [];
+let zoom = 100, cam = {x:0,y:0}, css = {};
+const readCss = () => { const s = getComputedStyle(document.documentElement);
+  for (const k of ['ink','muted','rule','chart','safe','safe-line','danger','danger-line']) css[k] = s.getPropertyValue('--'+k).trim(); };
+readCss(); matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readCss);
+
+// ---------- binary orbit (exact Kepler solution, tabulated over one period) ----------
+function buildTable(){
+  [TAx,TAy,TAvx,TAvy,TBx,TBy,TBvx,TBvy] = Array.from({length:8}, () => new Float64Array(N));
+  const q = Math.sqrt(1-ecc*ecc);
+  for (let i=0;i<N;i++){
+    const M = 2*Math.PI*i/N; let E = M + ecc*Math.sin(M);
+    for (let k=0;k<30;k++) E -= (E - ecc*Math.sin(E) - M)/(1 - ecc*Math.cos(E));
+    const rx = Math.cos(E)-ecc, ry = q*Math.sin(E), Ed = 2*Math.PI/(1-ecc*Math.cos(E));
+    const rvx = -Math.sin(E)*Ed, rvy = q*Math.cos(E)*Ed;
+    TAx[i]=-mu*rx; TAy[i]=-mu*ry; TAvx[i]=-mu*rvx; TAvy[i]=-mu*rvy;
+    TBx[i]=(1-mu)*rx; TBy[i]=(1-mu)*ry; TBvx[i]=(1-mu)*rvx; TBvy[i]=(1-mu)*rvy;
+  }
+}
+// Holman & Wiegert (1999) critical orbits
+const critP = () => { const m=Math.min(mu,1-mu), e=ecc; return 1.60+5.10*e-2.22*e*e+4.12*m-4.27*e*m-5.09*m*m+4.61*e*e*m*m; };
+const critS = pert => { const e=ecc; return Math.max(0, 0.464-0.380*pert-0.631*e+0.586*pert*e+0.150*e*e-0.198*pert*e*e); };
+const critA = () => critS(mu), critB = () => critS(1-mu);
+
+// ---------- test particles ----------
+function launch(spec, step){
+  const i = ((step % N)+N)%N, c = Math.cos(spec.theta), s = Math.sin(spec.theta);
+  let hx=0,hy=0,hvx=0,hvy=0,mh=1;
+  if (spec.kind==='A'){ hx=TAx[i]; hy=TAy[i]; hvx=TAvx[i]; hvy=TAvy[i]; mh=1-mu; }
+  if (spec.kind==='B'){ hx=TBx[i]; hy=TBy[i]; hvx=TBvx[i]; hvy=TBvy[i]; mh=mu; }
+  const v = Math.sqrt(G*mh/spec.r);
+  const p = {spec, x:hx+spec.r*c, y:hy+spec.r*s, vx:hvx - v*s, vy:hvy + v*c, ax:0, ay:0, step, alive:true};
+  accel(p); return p;
+}
+function accel(p){
+  const i = p.step % N, ax=TAx[i]-p.x, ay=TAy[i]-p.y, bx=TBx[i]-p.x, by=TBy[i]-p.y;
+  const ra2=ax*ax+ay*ay, rb2=bx*bx+by*by;
+  if (ra2 < RCOL*RCOL){ p.alive=false; p.fate='A'; return; }
+  if (rb2 < RCOL*RCOL){ p.alive=false; p.fate='B'; return; }
+  const ia=G*(1-mu)/(ra2*Math.sqrt(ra2)), ib=G*mu/(rb2*Math.sqrt(rb2));
+  p.ax=ax*ia+bx*ib; p.ay=ay*ia+by*ib;
+}
+function kdk(p){ // leapfrog with star positions taken from the exact table
+  p.vx+=p.ax*H*.5; p.vy+=p.ay*H*.5; p.x+=p.vx*H; p.y+=p.vy*H; p.step++;
+  accel(p); if(!p.alive) return;
+  p.vx+=p.ax*H*.5; p.vy+=p.ay*H*.5;
+}
+
+// ---------- scenarios ----------
+const scenarios = {
+  sampler: {mu:0.35, ecc:0.2, planets:[{kind:'A',r:0.16,theta:1},{kind:'B',r:0.11,theta:2.5},{kind:'P',r:3.4,theta:0.5},{kind:'P',r:2.1,theta:2.2},{kind:'P',r:1.6,theta:4.1}]},
+  kepler16: {mu:0.23, ecc:0.16, planets:[{kind:'P',r:3.14,theta:0.8}]},
+  kepler34: {mu:0.49, ecc:0.52, planets:[{kind:'P',r:4.78,theta:0.8}]},
+  ring: {mu:0.3, ecc:0.3, planets:Array.from({length:18},(_,k)=>({kind:'P', r:1.2+k*0.2, theta:k*2.4}))}
+};
+function loadScenario(name){
+  const s = scenarios[name]; mu=s.mu; ecc=s.ecc; $('mu').value=mu; $('ecc').value=ecc;
+  specs = s.planets.map((p,k)=>({...p, id:k+1, color:PALETTE[k%PALETTE.length]}));
+  document.querySelectorAll('#scenarios button').forEach(b=>b.classList.toggle('on',b.dataset.s===name));
+  starsChanged(); fit();
+}
+function restart(){
+  tick=0; planets = specs.map(sp=>{ const p=launch(sp,0); p.trail=[]; return p; });
+  log=[]; renderLog();
+}
+function starsChanged(){
+  buildTable(); scan=null; scanResult=null; $('scanText').textContent=''; $('scanProg').hidden=true; $('scanBtn').disabled=false; $('scanBtn').textContent='Run stability scan';
+  $('muo').textContent = Math.round(mu*100)+'% (A is '+Math.round((1-mu)*100)+'%)'; $('eo').textContent = ecc.toFixed(2);
+  $('zoneText').innerHTML =
+    `<span class="key" style="background:${css['safe-line']}"></span>Stable around the pair beyond <b>${critP().toFixed(2)}</b><br>`+
+    `<span class="key" style="background:${css['safe-line']}"></span>Stable around star A within <b>${critA().toFixed(2)}</b><br>`+
+    `<span class="key" style="background:${css['safe-line']}"></span>Stable around star B within <b>${critB().toFixed(2)}</b><br>`+
+    `<span class="key" style="background:${css['danger-line']}"></span>Chaotic everywhere in between`;
+  restart();
+}
+
+// ---------- camera ----------
+const W = () => cv.clientWidth, Hh = () => cv.clientHeight;
+const scr = (x,y) => [W()/2+(x-cam.x)*zoom, Hh()/2-(y-cam.y)*zoom];
+const unscr = (sx,sy) => [(sx-W()/2)/zoom+cam.x, -(sy-Hh()/2)/zoom+cam.y];
+function fit(){ let R=Math.max(4, critP()*1.3); for(const s of specs) if(s.kind==='P') R=Math.max(R,s.r*1.15);
+  zoom=Math.min(W(),Hh())/2/R; cam={x:0,y:0}; }
+function resize(){ const d=devicePixelRatio||1; cv.width=W()*d; cv.height=Hh()*d; ctx.setTransform(d,0,0,d,0,0); }
+let sized=false; new ResizeObserver(()=>{ resize(); if(!sized){sized=true; fit();} }).observe(stage);
+
+// ---------- drawing ----------
+function draw(){
+  const w=W(), h=Hh(); ctx.clearRect(0,0,w,h);
+  const i = tick % N, [ax,ay]=scr(TAx[i],TAy[i]), [bx,by]=scr(TBx[i],TBy[i]), [ox,oy]=scr(0,0);
+  const cP=critP()*zoom, cA=critA()*zoom, cB=critB()*zoom;
+  ctx.font='13px "IBM Plex Sans", system-ui, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+
+  if ($('showZones').checked){
+    ctx.fillStyle=css.danger; ctx.beginPath(); ctx.arc(ox,oy,cP,0,Math.PI*2);
+    ctx.moveTo(ax+cA,ay); ctx.arc(ax,ay,cA,0,Math.PI*2); ctx.moveTo(bx+cB,by); ctx.arc(bx,by,cB,0,Math.PI*2);
+    ctx.fill('evenodd');
+    ctx.fillStyle=css.safe; for (const [x,y,r] of [[ax,ay,cA],[bx,by,cB]]){ ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); }
+    ctx.setLineDash([6,5]); ctx.lineWidth=1.3;
+    ctx.strokeStyle=css['danger-line']; ctx.beginPath(); ctx.arc(ox,oy,cP,0,Math.PI*2); ctx.stroke();
+    ctx.strokeStyle=css['safe-line']; for (const [x,y,r] of [[ax,ay,cA],[bx,by,cB]]){ ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.stroke(); }
+    ctx.setLineDash([]);
+    ctx.fillStyle=css['danger-line']; ctx.fillText('Chaotic zone', ox, oy-cP+18);
+    ctx.fillStyle=css['safe-line']; ctx.fillText('Stable beyond this line', ox, oy-cP-14);
+  }
+  // scan results as thin rings
+  if (scanResult && $('showScan').checked){
+    ctx.globalAlpha=.75;
+    for (const res of scanResult.P){ ctx.strokeStyle=res.stable?css['safe-line']:css['danger-line']; ctx.lineWidth=Math.max(1,0.1*zoom*.45);
+      ctx.beginPath(); ctx.arc(ox,oy,res.r*zoom,0,Math.PI*2); ctx.stroke(); }
+    for (const [key,x,y] of [['A',ax,ay],['B',bx,by]]) for (const res of scanResult[key]){
+      ctx.strokeStyle=res.stable?css['safe-line']:css['danger-line']; ctx.lineWidth=Math.max(1,0.02*zoom*.5);
+      ctx.beginPath(); ctx.arc(x,y,res.r*zoom,0,Math.PI*2); ctx.stroke(); }
+    ctx.globalAlpha=1;
+  }
+  // star paths
+  ctx.strokeStyle=css.rule; ctx.lineWidth=1;
+  for (const [X,Y] of [[TAx,TAy],[TBx,TBy]]){ ctx.beginPath(); for(let k=0;k<=N;k+=20){ const [x,y]=scr(X[k%N],Y[k%N]); k?ctx.lineTo(x,y):ctx.moveTo(x,y);} ctx.stroke(); }
+  // planet trails and planets
+  for (const p of planets){ const t=p.trail; if(t.length>1){ ctx.strokeStyle=p.spec.color; ctx.lineWidth=1.5; ctx.lineJoin='round';
+      const chunks=10, per=Math.ceil(t.length/chunks);
+      for (let c=0;c<chunks;c++){ const a=c*per, e=Math.min(t.length-1,a+per); if(a>=e) break;
+        ctx.globalAlpha=(p.alive?1:.35)*(.08+.8*((c+1)/chunks)**1.5); ctx.beginPath();
+        for(let k=a;k<=e;k++){ const [x,y]=scr(t[k][0],t[k][1]); k===a?ctx.moveTo(x,y):ctx.lineTo(x,y);} ctx.stroke(); }
+      ctx.globalAlpha=1; }
+    const [x,y]=scr(p.x,p.y);
+    if (p.alive){ ctx.fillStyle=p.spec.color; ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.fill(); }
+    else if (x>-20&&x<w+20&&y>-20&&y<h+20){ ctx.strokeStyle=p.spec.color; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x-4,y-4); ctx.lineTo(x+4,y+4); ctx.moveTo(x+4,y-4); ctx.lineTo(x-4,y+4); ctx.stroke(); }
+  }
+  // stars
+  const rA = 6+9*Math.cbrt(1-mu), rB = 6+9*Math.cbrt(mu);
+  for (const [x,y,r,col,name] of [[ax,ay,rA,'245,184,61','A'],[bx,by,rB,'232,112,74','B']]){
+    const g=ctx.createRadialGradient(x,y,0,x,y,r*3); g.addColorStop(0,`rgba(${col},.55)`); g.addColorStop(1,`rgba(${col},0)`);
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r*3,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=`rgb(${col})`; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=css.ink; ctx.fillText(name, x, y-r-10);
+  }
+  // scale bar
+  ctx.strokeStyle=css.muted; ctx.fillStyle=css.muted; ctx.lineWidth=1.5; ctx.textAlign='right';
+  const L=zoom, bx0=w-16-L, by0=h-18; ctx.beginPath(); ctx.moveTo(bx0,by0-4); ctx.lineTo(bx0,by0); ctx.lineTo(bx0+L,by0); ctx.lineTo(bx0+L,by0-4); ctx.stroke();
+  ctx.fillText('1 × star separation', w-16, by0-14);
+
+  const alive=planets.filter(p=>p.alive).length;
+  $('orbits').textContent = `${(tick/N).toFixed(1)} orbits of the stars`;
+  $('survivors').textContent = planets.length ? `${alive} of ${planets.length} planets still orbiting` : 'Tap anywhere to add a planet';
+}
+
+// ---------- log ----------
+function renderLog(){
+  $('log').innerHTML = log.length ? log.slice(-6).reverse().map(l=>`<li><span class="dot" style="background:${l.color}"></span>${l.text}</li>`).join('') : '<li>Nothing lost yet.</li>';
+}
+const where = sp => sp.kind==='P' ? `circling both stars at ${sp.r.toFixed(2)}` : `circling star ${sp.kind} at ${sp.r.toFixed(2)}`;
+
+// ---------- stability scan ----------
+function startScan(){
+  const trials=[], add=(kind,r)=>{ for(let k=0;k<4;k++){ const p=launch({kind,r,theta:k*Math.PI/2+0.4}, k*N/4); p.r0=r; p.startStep=p.step; trials.push(p);} };
+  for (let r=1.0;r<=5.001;r+=0.1) add('P', +r.toFixed(2));
+  for (const host of ['A','B']) for (let r=0.04;r<=0.601;r+=0.02) add(host, +r.toFixed(2));
+  scan={trials, done:0, total:100*N};
+  $('scanBtn').disabled=true; $('scanBtn').textContent='Scanning…'; $('scanProg').hidden=false; $('scanText').textContent='';
+}
+function scanWork(){
+  const t0=performance.now();
+  while (performance.now()-t0<12 && scan.done<scan.total){
+    const BLOCK=200;
+    for (const p of scan.trials){ if(!p.alive) continue; for(let s=0;s<BLOCK && p.alive;s++) kdk(p); if(!p.alive) continue;
+      const i=p.step%N; let hx=0,hy=0,hvx=0,hvy=0,mh=1;
+      if (p.spec.kind==='A'){hx=TAx[i];hy=TAy[i];hvx=TAvx[i];hvy=TAvy[i];mh=1-mu;}
+      if (p.spec.kind==='B'){hx=TBx[i];hy=TBy[i];hvx=TBvx[i];hvy=TBvy[i];mh=mu;}
+      const d=Math.hypot(p.x-hx,p.y-hy), v2=(p.vx-hvx)**2+(p.vy-hvy)**2;
+      if (d>2*p.r0 || d<0.5*p.r0 || v2/2-G*mh/d>0){ p.alive=false; } }
+    scan.done+=BLOCK;
+  }
+  $('scanProg').value=scan.done/scan.total;
+  if (scan.done>=scan.total) finishScan();
+}
+function finishScan(){
+  const group = kind => { const m=new Map(); for(const p of scan.trials.filter(t=>t.spec.kind===kind)){ const k=p.r0; m.set(k,(m.get(k)??true)&&p.alive); }
+    return [...m].map(([r,stable])=>({r,stable})).sort((a,b)=>a.r-b.r); };
+  scanResult={P:group('P'), A:group('A'), B:group('B')}; scan=null;
+  const P=scanResult.P; let edgeP=null; for(let k=P.length-1;k>=0;k--){ if(!P[k].stable) break; edgeP=P[k].r; }
+  const inner = arr => { let e=null; for(const x of arr){ if(!x.stable) break; e=x.r; } return e; };
+  const eA=inner(scanResult.A), eB=inner(scanResult.B);
+  const f=(v,lo)=>v===null?`none stable from ${lo}`:v.toFixed(2);
+  $('scanText').innerHTML = `Around the pair, stable from <b>${edgeP===null?'none found':edgeP.toFixed(2)}</b> (predicted ${critP().toFixed(2)})<br>`+
+    `Around star A, stable out to <b>${f(eA,'0.04')}</b> (predicted ${critA().toFixed(2)})<br>`+
+    `Around star B, stable out to <b>${f(eB,'0.04')}</b> (predicted ${critB().toFixed(2)})`;
+  $('scanBtn').disabled=false; $('scanBtn').textContent='Run scan again'; $('scanProg').hidden=true;
+}
+
+// ---------- controls ----------
+$('play').onclick=()=>{ running=!running; $('play').textContent=running?'Pause':'Play'; };
+$('restart').onclick=restart;
+$('clear').onclick=()=>{ specs=[]; planets=[]; log=[]; renderLog(); };
+document.querySelectorAll('#scenarios button').forEach(b=>b.onclick=()=>loadScenario(b.dataset.s));
+$('mu').oninput=()=>{ mu=+$('mu').value; starsChanged(); };
+$('ecc').oninput=()=>{ ecc=+$('ecc').value; starsChanged(); };
+const syncOut=()=>{ $('spo').textContent=(+$('speed').value).toFixed(1)+' orbits/s'; $('tro').textContent=$('trail').value+' orbits'; };
+$('speed').oninput=$('trail').oninput=syncOut; syncOut();
+$('showZones').onchange=$('showScan').onchange=()=>{};
+$('scanBtn').onclick=startScan;
+
+// pointer: tap adds a planet, drag pans, pinch/scroll zooms
+const pointers=new Map(); let downAt=null, moved=false, pinch=0;
+cv.addEventListener('pointerdown',e=>{ cv.setPointerCapture(e.pointerId); pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pointers.size===1){downAt={x:e.clientX,y:e.clientY};moved=false;}
+  if(pointers.size===2){const [a,b]=[...pointers.values()]; pinch=Math.hypot(a.x-b.x,a.y-b.y); moved=true;} });
+cv.addEventListener('pointermove',e=>{ if(!pointers.has(e.pointerId)) return; const prev=pointers.get(e.pointerId); pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pointers.size===2){const [a,b]=[...pointers.values()], d=Math.hypot(a.x-b.x,a.y-b.y); if(pinch) zoom=Math.min(5000,Math.max(8,zoom*d/pinch)); pinch=d; return;}
+  if(!moved && Math.hypot(e.clientX-downAt.x,e.clientY-downAt.y)>5){ moved=true; cv.classList.add('panning'); }
+  if(moved){ cam.x-=(e.clientX-prev.x)/zoom; cam.y+=(e.clientY-prev.y)/zoom; } });
+const up=e=>{ if(!pointers.has(e.pointerId)) return; pointers.delete(e.pointerId); cv.classList.remove('panning');
+  if(pointers.size===0 && !moved){ const rc=cv.getBoundingClientRect(); addPlanetAt(...unscr(e.clientX-rc.left, e.clientY-rc.top)); }
+  if(pointers.size<2) pinch=0; };
+cv.addEventListener('pointerup',up); cv.addEventListener('pointercancel',up);
+cv.addEventListener('wheel',e=>{ e.preventDefault(); const rc=cv.getBoundingClientRect(), sx=e.clientX-rc.left, sy=e.clientY-rc.top;
+  const [wx,wy]=unscr(sx,sy); zoom=Math.min(5000,Math.max(8,zoom*Math.exp(-e.deltaY*0.0015)));
+  cam.x=wx-(sx-W()/2)/zoom; cam.y=wy+(sy-Hh()/2)/zoom; },{passive:false});
+
+function addPlanetAt(x,y){
+  if (planets.length>=60) return;
+  const i=tick%N, sep=Math.hypot(TBx[i]-TAx[i],TBy[i]-TAy[i]);
+  const dA=Math.hypot(x-TAx[i],y-TAy[i]), dB=Math.hypot(x-TBx[i],y-TBy[i]);
+  let spec;
+  if (dA<0.45*sep && dA<=dB && dA>RCOL*2) spec={kind:'A', r:dA, theta:Math.atan2(y-TAy[i],x-TAx[i])};
+  else if (dB<0.45*sep && dB>RCOL*2) spec={kind:'B', r:dB, theta:Math.atan2(y-TBy[i],x-TBx[i])};
+  else { const r=Math.hypot(x,y); if(r<0.05) return; spec={kind:'P', r, theta:Math.atan2(y,x)}; }
+  const id=specs.length?Math.max(...specs.map(s=>s.id))+1:1;
+  spec.id=id; spec.color=PALETTE[(id-1)%PALETTE.length];
+  // stored spec relaunches from the start on restart; the live planet starts now
+  const back = launch(spec, tick); const th0 = spec.theta; specs.push(spec);
+  back.trail=[]; planets.push(back); spec.theta=th0;
+}
+
+// ---------- main loop ----------
+let last=performance.now(), stepAcc=0;
+function frame(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now;
+  if (running && planets.length+1){
+    stepAcc += +$('speed').value*N*dt; const n=Math.min(20000, Math.floor(stepAcc)); stepAcc-=n;
+    const maxTrail = +$('trail').value*100;
+    for (let s=0;s<n;s++){
+      tick++;
+      for (const p of planets){ if(!p.alive) continue; kdk(p);
+        if (!p.alive){ log.push({color:p.spec.color, text:`Planet ${where(p.spec)} fell into star ${p.fate} after ${(tick/N).toFixed(1)} orbits`}); renderLog(); continue; }
+        if ((p.x*p.x+p.y*p.y)>ESC*ESC && (p.vx*p.vx+p.vy*p.vy)/2-G/Math.hypot(p.x,p.y)>0){ p.alive=false;
+          log.push({color:p.spec.color, text:`Planet ${where(p.spec)} was flung out after ${(tick/N).toFixed(1)} orbits`}); renderLog(); continue; }
+        if (tick%20===0){ if(maxTrail>0){ p.trail.push([p.x,p.y]); if(p.trail.length>maxTrail) p.trail.splice(0,p.trail.length-maxTrail);} else p.trail.length=0; } }
+    }
+  }
+  if (scan) scanWork();
+  draw(); requestAnimationFrame(frame);
+}
+loadScenario('sampler');
+if (matchMedia('(prefers-reduced-motion: reduce)').matches){ running=false; $('play').textContent='Play'; }
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
