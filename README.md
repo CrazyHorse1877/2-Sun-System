@@ -4,6 +4,8 @@ An interactive 2D simulation of planets in a binary star system, showing where "
 
 Planets can orbit a binary in two stable ways: close to one star (S-type orbits) or far outside both (P-type, or circumbinary orbits). In between lies a chaotic zone, where the two stars take turns tugging on a planet until it is thrown out of the system or falls into a star. The simulation draws the predicted zones, lets you drop planets anywhere, and can test the predictions by brute force.
 
+<img width="780" height="793" alt="image" src="https://github.com/user-attachments/assets/92ac93a8-3d57-460a-a178-d00e6116d496" />
+
 ## Quick start
 
 Open `binary-star.html` in any modern browser (Chrome, Firefox, Safari, Edge).
